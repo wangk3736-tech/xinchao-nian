@@ -14,7 +14,7 @@ import { selectUniqueBark } from './bark-dedupe.js';
 import { StateStore } from './state-store.js';
 import { ModelClient } from './model-client.js';
 import { OmbreClient, parseSurfacedDomains } from './ombre-client.js';
-import { BarkClient } from './bark-client.js';
+import { BarkClient, knockText } from './bark-client.js';
 import { readOmbreHeartbeat } from './heartbeat-store.js';
 import { buildContextEnvelope, contextDeliveryState, recordContextDelivery, buildNowCompact } from './context-envelope.js';
 import { TransitionJournal } from './transition-journal.js';
@@ -178,7 +178,7 @@ async function sendDreamPush(state, dream, now) {
     });
     if (selected.reason === 'duplicate') log('bark_duplicate_skipped', { kind: 'dream', attempts: selected.attempts });
     if (!selected.message) return state;
-    const result = await bark.send(selected.message);
+    const result = await bark.send(selected.message, undefined, 'dream');
     if (!result.sent) return state;
     state = await updateState({ type: 'bark_sent', source: 'bark', details: { barkSent: true, kind: 'dream' }, at: now },
       (latest) => recordBark(latest, now, { kind: 'dream', message: selected.message }));
@@ -448,7 +448,7 @@ async function runCycle() {
       }
       if (selected.message) {
         try {
-          const result = await bark.send(selected.message);
+          const result = await bark.send(selected.message, undefined, 'autonomous_thought');
           if (result.sent) {
             state = await updateState({
               type: 'bark_sent',
@@ -548,7 +548,7 @@ async function runCycle() {
       }
       if (selected.message) {
         try {
-          const result = await bark.send(selected.message);
+          const result = await bark.send(selected.message, undefined, 'daytime_emergence');
           if (result.sent) {
             state = await updateState({
               type: 'daytime_emergence_sent',
@@ -847,6 +847,18 @@ async function createContextEnvelope({
         .map((d) => ({ id: d.id, createdAt: d.createdAt, text: String(d.message ?? '').split('\n')[0] }));
     } catch { awaySignals = []; }
   }
+  // 本部署：上次有窗口来过之后（最多回看 48 小时）敲过的门，开窗时告诉她。
+  let knocks = [];
+  if (mode === 'session_start') {
+    try {
+      const lastSeen = Math.max(0, ...Object.values(state.contextDeliveries ?? {}).map((d) => Date.parse(d?.deliveredAt ?? '') || 0));
+      const floor = Math.max(lastSeen, now.getTime() - 48 * 3_600_000);
+      knocks = (Array.isArray(state.recentBarkMessages) ? state.recentBarkMessages : [])
+        .filter((b) => ['autonomous_thought', 'dream', 'daytime_emergence'].includes(b?.kind) && Date.parse(b?.at ?? '') > floor)
+        .slice(-3)
+        .map((b) => ({ at: b.at, kind: b.kind, text: bark.knockMode ? knockText(b.kind) : b.message }));
+    } catch { knocks = []; }
+  }
   let cabinUnread = 0;
   let cabinLocked = 0;
   try {
@@ -862,6 +874,7 @@ async function createContextEnvelope({
     boxCount,
     boxSurfaced,
     awaySignals,
+    knocks,
     cabinUnread,
     cabinLocked,
     ombreText,

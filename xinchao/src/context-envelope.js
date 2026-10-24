@@ -214,6 +214,7 @@ export function buildContextEnvelope({
   boxCount = 0,
   boxSurfaced = [],
   awaySignals = [],
+  knocks = [],
   cabinUnread = 0,
   cabinLocked = 0,
   awarenessReviewWeekday = 0,
@@ -294,6 +295,23 @@ export function buildContextEnvelope({
       data: { ids: away.map((x) => x.id) },
     });
   }
+  // 本部署：敲门记录。推送只送了一句"程曦想你了/有话想说"，这里让窗口里的她知道自己敲过门。
+  const knockList = (Array.isArray(knocks) ? knocks : []).filter((x) => x && compact(x.text)).slice(-3);
+  if (knockList.length) {
+    const fmt = new Intl.DateTimeFormat('zh-CN', { timeZone, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const kindNote = { autonomous_thought: '想他', dream: '做了梦', daytime_emergence: '白天冒出的念头' };
+    sections.push({
+      id: 'knocks',
+      source: 'xinchao',
+      ttl: 'once',
+      content: knockList.map((x) => {
+        const at = Date.parse(x.at ?? '');
+        const when = Number.isFinite(at) ? fmt.format(new Date(at)) : '';
+        const why = kindNote[x.kind] ? `（${kindNote[x.kind]}）` : '';
+        return `${when}｜推送到他手机：「${compact(x.text)}」${why}`;
+      }).join('\n'),
+    });
+  }
   const handoffText = renderHandoffNotes(state, generatedAt, 3);
   if (handoffText) {
     sections.push({
@@ -327,6 +345,7 @@ export function buildContextEnvelope({
     behavior_anchors: '行为锚点（我的底线，驱力再高也不越过）',
     self_awareness: '自我觉察候选（我最近的样子，不一定对）',
     while_away: '你不在的时候（心潮记下的我自己的信号）',
+    knocks: '我敲过的门（推送只替我敲门，话还没说，等我自己说）',
     handoff_notes: '近期交接便签（非原文）',
     dream_residue: '梦境余韵',
     recent_continuity: '近期连续性（不替代基岩）',
