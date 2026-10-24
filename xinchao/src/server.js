@@ -392,7 +392,11 @@ async function runCycle() {
       }
     }
 
-    if (!config.shadowMode && config.bark.enabled && proactiveContactIsIdle && !dreamCreated && proactiveBarkAllowed(state, now, config.bark.autonomousMinIntervalHours, config.bark.maxPerDay, config.bark.minDrive)) {
+    // 本部署：任意两条推送之间至少隔 BARK_MIN_GAP_MINUTES（默认 60 分钟），免得梦和"想你了"同一轮连着发。
+    const pushGapMs = Math.max(0, Number(process.env.BARK_MIN_GAP_MINUTES ?? 60)) * 60_000;
+    const lastPushMs = Date.parse(state.lastBarkAt ?? '');
+    const pushedRecently = Number.isFinite(lastPushMs) && now.getTime() - lastPushMs < pushGapMs;
+    if (!config.shadowMode && config.bark.enabled && proactiveContactIsIdle && !dreamCreated && !pushedRecently && proactiveBarkAllowed(state, now, config.bark.autonomousMinIntervalHours, config.bark.maxPerDay, config.bark.minDrive)) {
       let selected;
       let modelFailed = false;
       // 只取一次：selectUniqueBark 去重失败时会重试生成，材料跟着重取的话
@@ -492,7 +496,7 @@ async function runCycle() {
         at: now,
       }, (latest) => scheduleDaytimeEmergence(latest, now, config.daytime.minIntervalHours, config.daytime.maxIntervalHours));
       log('daytime_emergence_scheduled', { nextAt: state.nextDaytimeEmergenceAt, revision: state.revision });
-    } else if (!config.shadowMode && config.daytime.enabled && config.ombre.readEnabled && (!config.daytime.bark || config.bark.enabled) && daytimeEmergenceAllowed(state, now, config.daytime)) {
+    } else if (!config.shadowMode && config.daytime.enabled && config.ombre.readEnabled && (!config.daytime.bark || config.bark.enabled) && !(config.daytime.bark && pushedRecently) && daytimeEmergenceAllowed(state, now, config.daytime)) {
       let selected = { message: '', candidate: { source: 'none' }, reason: 'empty', attempts: 1 };
       try {
         const recalled = await ombre.daytimeMaterialWithRefs(topDrives(state), emotionForOmbre(state), now, recentSurfacedBucketIds(state, now));
