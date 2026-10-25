@@ -498,8 +498,9 @@ async function runCycle() {
       log('daytime_emergence_scheduled', { nextAt: state.nextDaytimeEmergenceAt, revision: state.revision });
     } else if (!config.shadowMode && config.daytime.enabled && config.ombre.readEnabled && (!config.daytime.bark || config.bark.enabled) && !(config.daytime.bark && pushedRecently) && daytimeEmergenceAllowed(state, now, config.daytime)) {
       let selected = { message: '', candidate: { source: 'none' }, reason: 'empty', attempts: 1 };
+      let recalled = { bucketIds: [] };
       try {
-        const recalled = await ombre.daytimeMaterialWithRefs(topDrives(state), emotionForOmbre(state), now, recentSurfacedBucketIds(state, now));
+        recalled = await ombre.daytimeMaterialWithRefs(topDrives(state), emotionForOmbre(state), now, recentSurfacedBucketIds(state, now));
         if (recalled.bucketIds.length) {
           state = await updateState({ type: 'surfaced_buckets', source: 'daytime', details: { count: recalled.bucketIds.length }, at: now },
             (latest) => recordSurfacedBuckets(latest, recalled.bucketIds, now));
@@ -860,7 +861,7 @@ async function createContextEnvelope({
       knocks = (Array.isArray(state.recentBarkMessages) ? state.recentBarkMessages : [])
         .filter((b) => ['autonomous_thought', 'dream', 'daytime_emergence'].includes(b?.kind) && Date.parse(b?.at ?? '') > floor)
         .slice(-3)
-        .map((b) => ({ at: b.at, kind: b.kind, text: bark.knockMode ? knockText(b.kind) : b.message }));
+        .map((b) => ({ at: b.at, kind: b.kind, text: bark.knocks(b.kind) ? knockText(b.kind) : b.message }));
     } catch { knocks = []; }
   }
   let cabinUnread = 0;

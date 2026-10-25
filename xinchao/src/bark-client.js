@@ -25,11 +25,17 @@ export class BarkClient {
     this.config = config;
     this.env = env;
     this.knockMode = /^(1|true|yes|on)$/i.test(String(env.BARK_KNOCK_MODE ?? '').trim());
+    // BARK_KNOCK_SKIP：逗号分隔的推送种类，这些种类照发原文、不敲门。例：dream
+    this.knockSkip = new Set(String(env.BARK_KNOCK_SKIP ?? '').split(',').map((x) => x.trim()).filter(Boolean));
+  }
+
+  knocks(kind) {
+    return this.knockMode && !this.knockSkip.has(kind);
   }
 
   async send(body, title = this.config.title, kind = '') {
     if (!this.config.enabled || !this.config.key) return { sent: false, reason: 'disabled' };
-    const outgoing = this.knockMode ? knockText(kind, this.env) : body;
+    const outgoing = this.knocks(kind) ? knockText(kind, this.env) : body;
     const response = await fetch(`${this.config.server}/${encodeURIComponent(this.config.key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,6 +50,6 @@ export class BarkClient {
       signal: AbortSignal.timeout(15000)
     });
     if (!response.ok) throw new Error(`Bark failed: HTTP ${response.status}`);
-    return { sent: true, knock: this.knockMode };
+    return { sent: true, knock: this.knocks(kind) };
   }
 }
